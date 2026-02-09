@@ -1,4 +1,4 @@
-I built upon the STASE Pipeline for WMI-1 and modified the driver, stubs, and assertions so that KLEE is able to detect the WMI-2 error:
+I built on the STASE pipeline originally used for WMI-1 (Use-After-Free / stale reference) and adapted it to detect WMI-2 (information leak via type confusion) in the MetaLogin codebase.
 
 ## 1. WMI‑2 Leak via Type Confusion
 Original behavior in metalogin.c:
