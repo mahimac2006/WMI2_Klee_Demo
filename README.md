@@ -1,4 +1,4 @@
-# 1. WMI‑2 Leak via Type Confusion
+## 1. WMI‑2 Leak via Type Confusion
 Original behavior in metalogin.c:
 - set_avatar(username, access_code) allocates an avatar and its username buffer; saves pointer in g_session.current_avatar.
 - clear_avatar() frees the avatar and its fields but does not always null g_session.current_avatar → stale pointer.
@@ -9,7 +9,7 @@ WMI‑2 pattern:
 - We now reinterpret freed memory: the stale avatar / username pointer may now point into memory that holds a heap pointer or other internal data.
 - When we print those bytes, we are leaking internal heap state (pointer values) as “user data” 
 
-# 2. Symbolic Driver
+## 2. Symbolic Driver
 a. Choosing the minimal path
 - init_system() – initialize g_session, allocator state, etc.
 - set_avatar(username, access_code) – allocate avatar and username buffer.
@@ -20,9 +20,10 @@ I removed all menu/UI code and unnecessary paths; the driver only executes this 
 b. Symbolic inputs:
 username[MAX_LENGTH] and access_code[MAX_LENGTH] made symbolic with klee_make_symbolic.
 
-# 3. Environment Modeling and Stubs
+## 3. Environment Modeling and Stubs
 Main difference for WMI‑2:
-fgets is not a no‑op; it returns a fixed string "127\n":
+- In the original STASE demo stubs, fgets was always returned NULL so any code waiting for user input got no input and did nothing.
+- In the WMI‑2 stubs, fgets writes "127\n" into the buffer and returns it so set_start_location() behaves as if a user really typed 127.
 
     char *fgets(char *s, int size, void *stream) {      
       (void)stream;      
@@ -37,12 +38,12 @@ This ensures that set_start_location() always gets input, so it:
 - Triggers heap allocations that may reuse the freed avatar/username chunks.
 The stubs are how the environment is controlled so the specific WMI‑2 path is taken and nothing else distracts KLEE.
 
-# 4. Assertions 
+## 4. Assertions 
 klee_assert(!is_in_heap_range(leaked));
 
 It must never be the case that the username field contains a heap pointer. When KLEE finds a path where that field does contain a heap pointer, the assertion fails
 
-# 5. KLEE output 
+## 5. KLEE output 
 
 mahima@mc:~/Downloads/WMI2_KLEE_DEMO$ ./run_wmi2.sh
 + klee --search=bfs --max-time=60s --exit-on-error-type=Assert wmi2_demo.bc
