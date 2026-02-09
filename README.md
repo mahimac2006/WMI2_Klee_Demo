@@ -1,3 +1,5 @@
+I built upon the STASE Pipeline for WMI-1 and modified the driver, stubs, and assertions so that KLEE is able to detect the WMI-2 error:
+
 ## 1. WMI‑2 Leak via Type Confusion
 Original behavior in metalogin.c:
 - set_avatar(username, access_code) allocates an avatar and its username buffer; saves pointer in g_session.current_avatar.
