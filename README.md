@@ -1,52 +1,69 @@
-# WMI-2 (Leak via Type Confusion) — KLEE Demo
+# 1. WMI‑2 Leak via Type Confusion
+Original behavior in metalogin.c:
+- set_avatar(username, access_code) allocates an avatar and its username buffer; saves pointer in g_session.current_avatar.
+- clear_avatar() frees the avatar and its fields but does not always null g_session.current_avatar → stale pointer.
+- set_start_location() later allocates start_loc and location_name with malloc. The allocator can reuse the chunk that used to hold the avatar or the username buffer.
+- render_hex() prints 16 bytes at av->username via print16_hex(av->username), assuming it’s a user string.
 
-Standalone repo to detect **WMI-2: information leak via type confusion** in the MetaLogin C codebase using KLEE symbolic execution and a STASE-style pipeline.
+WMI‑2 pattern:
+- We now reinterpret freed memory: the stale avatar / username pointer may now point into memory that holds a heap pointer or other internal data.
+- When we print those bytes, we are leaking internal heap state (pointer values) as “user data” 
 
-## What This Demo Does
+# 2. Symbolic Driver
+a. Choosing the minimal path
+- init_system() – initialize g_session, allocator state, etc.
+- set_avatar(username, access_code) – allocate avatar and username buffer.
+- clear_avatar() – free avatar, leaving a stale pointer.
+- set_start_location() – allocate new objects; potential heap reuse of freed chunks.
+I removed all menu/UI code and unnecessary paths; the driver only executes this one sequence.
 
-- **Bug:** After `set_avatar` → `clear_avatar`, `g_session.current_avatar` is a stale pointer. A later `set_start_location()` allocates new objects; the allocator may reuse the freed avatar memory. Code that reads the "username" field from the stale pointer can then observe **heap pointer values** as if they were user data (information leak / type confusion).
-- **Assertion:** The 8-byte value at `(current_avatar + offsetof(avatar, username))` must **not** be a valid heap address. If it is, we report a leak (KLEE assertion failure).
+b. Symbolic inputs:
+username[MAX_LENGTH] and access_code[MAX_LENGTH] made symbolic with klee_make_symbolic.
 
-## Requirements
+# 3. Environment Modeling and Stubs
+Main difference for WMI‑2:
+fgets is not a no‑op; it returns a fixed string "127\n":
 
-- **KLEE** (with LLVM/clang) — typically on Linux/Ubuntu.
-- **clang** with `-emit-llvm`, **llvm-link**.
+    char *fgets(char *s, int size, void *stream) {      
+      (void)stream;      
+      if (!s || size < 5) return NULL;      
+      const char *in = "127\n";      
+      ...      
+      return s;    
+    }
+    
+This ensures that set_start_location() always gets input, so it:
+- Allocates start_loc and location_name.
+- Triggers heap allocations that may reuse the freed avatar/username chunks.
+The stubs are how the environment is controlled so the specific WMI‑2 path is taken and nothing else distracts KLEE.
 
-## Quick Start (on a machine with KLEE)
+# 4. Assertions 
+klee_assert(!is_in_heap_range(leaked));
 
-```bash
-cd /path/to/wmi2_klee_demo
-./stub_wmi2.sh
-KLEE_INC=/path/to/klee/include ./build_wmi2.sh
-./run_wmi2.sh
-```
+It must never be the case that the username field contains a heap pointer. When KLEE finds a path where that field does contain a heap pointer, the assertion fails
 
-If `klee.h` is in a custom path, set `KLEE_INC`:
+# 5. KLEE output 
 
-```bash
-export KLEE_INC=$(klee-config --includedir)   # if klee-config exists
-./build_wmi2.sh
-./run_wmi2.sh
-```
+mahima@mc:~/Downloads/WMI2_KLEE_DEMO$ ./run_wmi2.sh
++ klee --search=bfs --max-time=60s --exit-on-error-type=Assert wmi2_demo.bc
+KLEE: output directory is "/home/mahima/Downloads/WMI2_KLEE_DEMO/klee-out-0"
+KLEE: Using Z3 solver backend
+KLEE: Deterministic allocator: Using quarantine queue size 8
+KLEE: Deterministic allocator: globals (start-address=0x7aeafe800000 size=10 GiB)
+KLEE: Deterministic allocator: constants (start-address=0x7ae87e800000 size=10 GiB)
+KLEE: Deterministic allocator: heap (start-address=0x79e87e800000 size=1024 GiB)
+KLEE: Deterministic allocator: stack (start-address=0x79c87e800000 size=128 GiB)
+KLEE: WARNING ONCE: Alignment of memory from call "malloc" is not modelled. Using alignment of 8.
+KLEE: WARNING ONCE: Alignment of memory from call "calloc" is not modelled. Using alignment of 8.
+KLEE: ERROR: driver_wmi2_leak.c:66: memory error: use after free
+KLEE: NOTE: now ignoring this error at this location
 
-## Layout
+KLEE: done: total instructions = 7293834
+KLEE: done: completed paths = 449
+KLEE: done: partially completed paths = 5780
+KLEE: done: generated tests = 450
++ echo '[OK] KLEE finished; see klee-out-* for errors/tests'
+[OK] KLEE finished; see klee-out-* for errors/tests
 
-| File | Role |
-|------|------|
-| `metalogin.c`, `metalogin.h`, `globals.c` | Target C codebase (MetaLogin). |
-| `driver_wmi2_leak.c` | Symbolic driver: runs the WMI-2 path and asserts no heap pointer in the "username" field. |
-| `stubs_wmi2.c` | Generated by `stub_wmi2.sh`: libc/I/O stubs; `fgets` returns `"127\n"` so `set_start_location` allocates. |
-| `stub_wmi2.sh` | Writes `stubs_wmi2.c`. |
-| `build_wmi2.sh` | Builds `wmi2_demo.bc` (driver + stubs + metalogin + globals). |
-| `run_wmi2.sh` | Runs KLEE on `wmi2_demo.bc`. |
-
-## Modeling Summary
-
-1. **Path:** `init_system()` → `set_avatar()` → `clear_avatar()` → `set_start_location()` → read `current_avatar->username`.
-2. **Symbolic inputs:** `username` and `access_code` (null-terminated, non-empty username).
-3. **Stubs:** Same idea as WMI-1; for WMI-2, `fgets` must return data so `set_start_location` actually allocates (here: `"127\n"`).
-4. **Assertion:** Value at the stale "username" field must not lie in KLEE’s heap range (`HEAP_START`–`HEAP_END` in the driver). Adjust these if your KLEE allocator uses different bounds.
-
-## Expected Result
-
-When the freed chunk is reused and the overwritten "username" slot contains a heap pointer, KLEE hits the assertion and reports an error (information leak). Check `klee-out-*/` for the failing test and messages.
+The stats (completed paths = 449, generated tests = 450) show KLEE explored many variants of the symbolic username/access code
+It found the WMI‑2 path and detected memory misuse successfully
