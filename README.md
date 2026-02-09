@@ -41,7 +41,7 @@ The stubs are how the environment is controlled so the specific WMI‑2 path is 
 ## 4. Assertions 
 klee_assert(!is_in_heap_range(leaked));
 
-It must never be the case that the username field contains a heap pointer. When KLEE finds a path where that field does contain a heap pointer, the assertion fails
+- It must never be the case that the username field contains a heap pointer. When KLEE finds a path where that field does contain a heap pointer, the assertion fails
 
 ## 5. KLEE output 
 
@@ -66,5 +66,5 @@ KLEE: done: generated tests = 450
 + echo '[OK] KLEE finished; see klee-out-* for errors/tests'
 [OK] KLEE finished; see klee-out-* for errors/tests
 
-The stats (completed paths = 449, generated tests = 450) show KLEE explored many variants of the symbolic username/access code
-It found the WMI‑2 path and detected memory misuse successfully
+- The stats (completed paths = 449, generated tests = 450) show KLEE explored many variants of the symbolic username/access code
+- It found the WMI‑2 path and detected memory misuse successfully
