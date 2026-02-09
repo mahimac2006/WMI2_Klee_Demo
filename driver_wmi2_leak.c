@@ -11,8 +11,6 @@
  * Assertion: The 8-byte value at (current_avatar + offsetof(avatar, username))
  * must NOT be a valid heap address. If it is, we report a leak (assert fails).
  *
- * Heap range below matches KLEE's deterministic allocator (heap region).
- * Adjust HEAP_START/HEAP_END if your KLEE version uses different bounds.
  */
 #include <stdint.h>
 #include <stddef.h>
