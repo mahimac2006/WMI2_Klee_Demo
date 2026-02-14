@@ -48,7 +48,7 @@ klee_assert(!is_in_heap_range(leaked));
 ## 5. KLEE output 
 
 mahima@mc:~/Downloads/WMI2_KLEE_DEMO$ ./run_wmi2.sh
-+ klee --search=bfs --max-time=60s --exit-on-error-type=Assert wmi2_demo.bc
+klee --search=bfs --max-time=60s --exit-on-error-type=Assert wmi2_demo.bc
 KLEE: output directory is "/home/mahima/Downloads/WMI2_KLEE_DEMO/klee-out-0"
 KLEE: Using Z3 solver backend
 KLEE: Deterministic allocator: Using quarantine queue size 8
@@ -60,12 +60,11 @@ KLEE: WARNING ONCE: Alignment of memory from call "malloc" is not modelled. Usin
 KLEE: WARNING ONCE: Alignment of memory from call "calloc" is not modelled. Using alignment of 8.
 KLEE: ERROR: driver_wmi2_leak.c:66: memory error: use after free
 KLEE: NOTE: now ignoring this error at this location
-
 KLEE: done: total instructions = 7293834
 KLEE: done: completed paths = 449
 KLEE: done: partially completed paths = 5780
 KLEE: done: generated tests = 450
-+ echo '[OK] KLEE finished; see klee-out-* for errors/tests'
+echo '[OK] KLEE finished; see klee-out-* for errors/tests'
 [OK] KLEE finished; see klee-out-* for errors/tests
 
 - The stats (completed paths = 449, generated tests = 450) show KLEE explored many variants of the symbolic username/access code
